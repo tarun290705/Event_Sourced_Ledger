@@ -3,6 +3,7 @@ from rest_framework.exceptions import ValidationError
 from apps.accounts.models import Account
 from apps.ledger.models import LedgerEntry, LedgerTransaction
 from apps.ledger.services import post_transaction, calculate_account_balance
+from apps.events.services import record_event
 from .models import Transfer
 
 @transaction.atomic
@@ -81,7 +82,7 @@ def create_transfer(*, source_account_id, destination_account_id, amount_minor_u
     )
 
     try:
-        return Transfer.objects.create(
+        transfer = Transfer.objects.create(
             source_account=source,
             destination_account=destination,
             amount_minor_units=amount_minor_units,
@@ -90,6 +91,22 @@ def create_transfer(*, source_account_id, destination_account_id, amount_minor_u
             ledger_transaction=ledger_transaction,
             status=Transfer.Status.COMPLETED,
         )
+
+        record_event(
+            aggregate_type="TRANSFER",
+            aggregate_id=transfer.id,
+            event_type="TransferCompleted",
+            payload={
+                "transfer_id": str(transfer.id),
+                "source_account_id": str(source.id),
+                "destination_account_id": str(destination.id),
+                "amount_minor_units": amount_minor_units,
+                "currency": source.currency,
+                "ledger_transaction_id": str(ledger_transaction.id),
+            }
+        )
+
+        return transfer
 
     except IntegrityError:
         raise

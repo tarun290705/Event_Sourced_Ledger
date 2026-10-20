@@ -4,6 +4,7 @@ from rest_framework.exceptions import ValidationError
 from apps.accounts.models import Account
 from apps.ledger.models import LedgerEntry, LedgerTransaction
 from apps.ledger.services import calculate_account_balance, post_transaction
+from apps.events.models import DomainEvent
 from .models import Transfer
 from .services import create_transfer
 from rest_framework import status
@@ -186,7 +187,99 @@ class TransferServiceTests(TestCase):
         self.assertEqual(calculate_account_balance(self.alice), 100000)
         self.assertEqual(calculate_account_balance(self.bob), 0)
 
+    
+    def test_successful_transfer_creates_completion_event(self):
+        transfer = create_transfer(
+            source_account_id=self.alice.id,
+            destination_account_id=self.bob.id,
+            amount_minor_units=25000,
+            idempotency_key="transfer-event-test",
+        )
 
+        events = DomainEvent.objects.filter(
+            aggregate_type="TRANSFER",
+            aggregate_id=transfer.id,
+            event_type="TransferCompleted",
+        )
+
+        self.assertEqual(events.count(), 1)
+
+        event = events.get()
+        self.assertEqual(event.sequence_number, 1)
+        self.assertEqual(
+            event.payload["transfer_id"],
+            str(transfer.id),
+        )
+        self.assertEqual(
+            event.payload["source_account_id"],
+            str(self.alice.id),
+        )
+        self.assertEqual(
+            event.payload["destination_account_id"],
+            str(self.bob.id),
+        )
+        self.assertEqual(event.payload["amount_minor_units"], 25000)
+        self.assertEqual(event.payload["currency"], self.alice.currency)
+
+
+    def test_idempotent_retry_does_not_duplicate_event(self):
+        first = create_transfer(
+            source_account_id=self.alice.id,
+            destination_account_id=self.bob.id,
+            amount_minor_units=25000,
+            idempotency_key="transfer-event-retry-test",
+        )
+
+        second = create_transfer(
+            source_account_id=self.alice.id,
+            destination_account_id=self.bob.id,
+            amount_minor_units=25000,
+            idempotency_key="transfer-event-retry-test",
+        )
+
+        self.assertEqual(first.id, second.id)
+
+        self.assertEqual(
+            DomainEvent.objects.filter(
+                aggregate_type="TRANSFER",
+                aggregate_id=first.id,
+                event_type="TransferCompleted",
+            ).count(),
+            1,
+        )
+
+
+    def test_event_failure_rolls_back_transfer_and_ledger(self):
+        initial_transfer_count = Transfer.objects.count()
+        initial_transaction_count = LedgerTransaction.objects.count()
+        initial_entry_count = LedgerEntry.objects.count()
+        initial_event_count = DomainEvent.objects.count()
+
+        with patch(
+            "apps.transfers.services.record_event",
+            side_effect=RuntimeError("Simulated event failure"),
+        ):
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "Simulated event failure",
+            ):
+                create_transfer(
+                    source_account_id=self.alice.id,
+                    destination_account_id=self.bob.id,
+                    amount_minor_units=25000,
+                    idempotency_key="transfer-event-rollback-test",
+                )
+
+        self.assertEqual(Transfer.objects.count(), initial_transfer_count)
+        self.assertEqual(
+            LedgerTransaction.objects.count(),
+            initial_transaction_count,
+        )
+        self.assertEqual(LedgerEntry.objects.count(), initial_entry_count)
+        self.assertEqual(DomainEvent.objects.count(), initial_event_count)
+
+        self.assertEqual(calculate_account_balance(self.alice), 100000)
+        self.assertEqual(calculate_account_balance(self.bob), 0)
 
 class TransferAPITests(APITestCase):
     def setUp(self):

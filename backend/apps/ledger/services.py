@@ -4,6 +4,7 @@ from django.db.models import Sum
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 from apps.accounts.models import Account
+from apps.events.services import record_event
 from .models import LedgerEntry, LedgerTransaction
 
 def calculate_account_balance(account):
@@ -148,5 +149,25 @@ def post_transaction(*, transaction_type, description, entries):
     ledger_transaction.status = LedgerTransaction.Status.POSTED
     ledger_transaction.posted_at = timezone.now()
     ledger_transaction.save(update_fields=["status", "posted_at"])
+
+    record_event(
+        aggregate_type="LEDGER_TRANSACTION",
+        aggregate_id=ledger_transaction.id,
+        event_type="LedgerTransactionPosted",
+        payload={
+            "transaction_id": str(ledger_transaction.id),
+            "transaction_type": ledger_transaction.transaction_type,
+            "description": ledger_transaction.description,
+            "posted_at": ledger_transaction.posted_at.isoformat(),
+            "entries": [
+                {
+                    "account_id": str(entry["account_id"]),
+                    "side": entry["side"],
+                    "amount_minor_units": entry["amount_minor_units"],
+                }
+                for entry in normalized_entries
+            ],
+        },
+    )
 
     return ledger_transaction
