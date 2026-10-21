@@ -5,6 +5,8 @@ from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 from apps.accounts.models import Account
 from apps.events.services import record_event
+from apps.audit.models import AuditLog
+from apps.audit.services import record_audit_log
 from .models import LedgerEntry, LedgerTransaction
 
 def calculate_account_balance(account):
@@ -167,6 +169,19 @@ def post_transaction(*, transaction_type, description, entries):
                 }
                 for entry in normalized_entries
             ],
+        },
+    )
+
+    record_audit_log(
+        action=AuditLog.Action.TRANSFER_POSTED,
+        resource_type="LEDGER_TRANSACTION",
+        resource_id=ledger_transaction.id,
+        actor="system",
+        description="Ledger transaction posted successfully",
+        metadata={
+            "transaction_type": ledger_transaction.transaction_type,
+            "description": ledger_transaction.description,
+            "entry_count": len(normalized_entries,)
         },
     )
 

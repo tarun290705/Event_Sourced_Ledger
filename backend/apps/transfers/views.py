@@ -1,7 +1,7 @@
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import PermissionDenied
 from apps.accounts.models import Account
 from .serializers import TransferCreateSerializer
 from .services import create_transfer
@@ -12,6 +12,15 @@ class TransferCreateView(APIView):
         serializer.is_valid(raise_exception=True)
 
         data = serializer.validated_data
+
+        if not request.user.is_staff:
+            owns_source_account = Account.objects.filter(
+                id=data["source_account_id"],
+                owner=request.user,
+            ).exists()
+
+            if not owns_source_account:
+                raise PermissionDenied("You are not autherized to transfer from this account")
 
         transfer = create_transfer(
             source_account_id=data["source_account_id"],

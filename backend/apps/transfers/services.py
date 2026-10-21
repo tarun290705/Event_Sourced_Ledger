@@ -4,6 +4,8 @@ from apps.accounts.models import Account
 from apps.ledger.models import LedgerEntry, LedgerTransaction
 from apps.ledger.services import post_transaction, calculate_account_balance
 from apps.events.services import record_event
+from apps.audit.models import AuditLog
+from apps.audit.services import record_audit_log
 from .models import Transfer
 
 @transaction.atomic
@@ -104,6 +106,21 @@ def create_transfer(*, source_account_id, destination_account_id, amount_minor_u
                 "currency": source.currency,
                 "ledger_transaction_id": str(ledger_transaction.id),
             }
+        )
+
+        record_audit_log(
+            action=AuditLog.Action.TRANSFER_COMPLETED,
+            resource_type="TRANSFER",
+            resource_id=transfer.id,
+            actor="system",
+            description="Transfer completed successfully",
+            metadata={
+                "source_account_id": str(transfer.source_account_id),
+                "destination_account_id": str(transfer.destination_account_id),
+                "amount_minor_units": transfer.amount_minor_units,
+                "currency": transfer.currency,
+                "ledger_transaction_id": str(transfer.ledger_transaction_id),
+            },
         )
 
         return transfer

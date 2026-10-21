@@ -5,6 +5,7 @@ from apps.accounts.models import Account
 from apps.ledger.models import LedgerEntry, LedgerTransaction
 from apps.ledger.services import calculate_account_balance, post_transaction
 from apps.events.models import DomainEvent
+from apps.audit.models import AuditLog
 from .models import Transfer
 from .services import create_transfer
 from rest_framework import status
@@ -15,6 +16,7 @@ from threading import Barrier
 from django.db import close_old_connections, IntegrityError
 from django.test import TransactionTestCase
 from unittest.mock import patch
+from django.contrib.auth import get_user_model
 
 class TransferServiceTests(TestCase):
     def setUp(self):
@@ -64,6 +66,12 @@ class TransferServiceTests(TestCase):
             idempotency_key="transfer-test-001",
         )
 
+        audit_log = AuditLog.objects.get(
+            action=AuditLog.Action.TRANSFER_COMPLETED,
+            resource_type="TRANSFER",
+            resource_id=str(transfer.id),
+        )
+
         self.assertEqual(transfer.status, Transfer.Status.COMPLETED)
         self.assertEqual(transfer.currency, "INR")
         self.assertEqual(transfer.amount_minor_units, 25000)
@@ -72,6 +80,9 @@ class TransferServiceTests(TestCase):
         self.assertEqual(calculate_account_balance(self.alice), 75000)
         self.assertEqual(calculate_account_balance(self.bob), 25000)
         self.assertEqual(Transfer.objects.count(), 1)
+        self.assertEqual(audit_log.resource_id, str(transfer.id))
+        self.assertEqual(audit_log.metadata["amount_minor_units"], transfer.amount_minor_units)
+        self.assertEqual(audit_log.metadata["currency"], transfer.currency)
 
     def test_duplicate_request_does_not_transfer_twice(self):
         first_transfer = create_transfer(
@@ -90,6 +101,16 @@ class TransferServiceTests(TestCase):
 
         self.assertEqual(first_transfer.id, second_transfer.id)
         self.assertEqual(Transfer.objects.count(), 1)
+
+        self.assertEqual(
+            AuditLog.objects.filter(
+                action=AuditLog.Action.TRANSFER_COMPLETED,
+                resource_type="TRANSFER",
+                resource_id=str(first_transfer.id),
+            ).count(),
+            1,
+        )
+
         self.assertEqual(calculate_account_balance(self.alice), 75000)
         self.assertEqual(calculate_account_balance(self.bob), 25000)
         self.assertEqual(LedgerTransaction.objects.count(), 2)
@@ -248,7 +269,6 @@ class TransferServiceTests(TestCase):
             1,
         )
 
-
     def test_event_failure_rolls_back_transfer_and_ledger(self):
         initial_transfer_count = Transfer.objects.count()
         initial_transaction_count = LedgerTransaction.objects.count()
@@ -283,6 +303,14 @@ class TransferServiceTests(TestCase):
 
 class TransferAPITests(APITestCase):
     def setUp(self):
+        User = get_user_model()
+
+        self.user = User.objects.create_user(
+            username="api_transfer_user",
+            password="test-password-123",
+        )
+        self.client.force_authenticate(user=self.user)
+
         self.cash = Account.objects.create(
             account_number="API-TEST-CASH",
             name="API Test Cash",
@@ -294,6 +322,7 @@ class TransferAPITests(APITestCase):
             name="API Test Alice",
             account_type=Account.AccountType.LIABILITY,
             currency="INR",
+            owner=self.user,
         )
         self.bob = Account.objects.create(
             account_number="API-TEST-BOB",
