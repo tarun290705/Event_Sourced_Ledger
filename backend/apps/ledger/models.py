@@ -43,6 +43,7 @@ class LedgerEntry(models.Model):
     class Meta:
         ordering = ["created_at", "id"]
         constraints = [models.CheckConstraint(condition=Q(amount_minor_units__gt=0), name="ledger_entry_amount_positive")]
+        indexes = [models.Index(fields=["account", "transaction"], name="ledger_account_txn_idx")]
 
     def __str__(self):
         return (

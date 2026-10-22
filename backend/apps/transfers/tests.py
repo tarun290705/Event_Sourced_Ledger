@@ -301,6 +301,41 @@ class TransferServiceTests(TestCase):
         self.assertEqual(calculate_account_balance(self.alice), 100000)
         self.assertEqual(calculate_account_balance(self.bob), 0)
 
+    
+def test_audit_failure_rolls_back_transfer_and_ledger(self):
+    initial_transfer_count = Transfer.objects.count()
+    initial_transaction_count = LedgerTransaction.objects.count()
+    initial_entry_count = LedgerEntry.objects.count()
+    initial_event_count = DomainEvent.objects.count()
+    initial_audit_count = AuditLog.objects.count()
+
+    with patch(
+        "apps.transfers.services.record_audit_log",
+        side_effect=RuntimeError("Simulated audit failure"),
+    ):
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "Simulated audit failure",
+        ):
+            create_transfer(
+                source_account_id=self.alice.id,
+                destination_account_id=self.bob.id,
+                amount_minor_units=25000,
+                idempotency_key="transfer-audit-rollback-test",
+            )
+
+    self.assertEqual(Transfer.objects.count(), initial_transfer_count)
+    self.assertEqual(
+        LedgerTransaction.objects.count(),
+        initial_transaction_count,
+    )
+    self.assertEqual(LedgerEntry.objects.count(), initial_entry_count)
+    self.assertEqual(DomainEvent.objects.count(), initial_event_count)
+    self.assertEqual(AuditLog.objects.count(), initial_audit_count)
+
+    self.assertEqual(calculate_account_balance(self.alice), 100000)
+    self.assertEqual(calculate_account_balance(self.bob), 0)
+
 class TransferAPITests(APITestCase):
     def setUp(self):
         User = get_user_model()
@@ -453,6 +488,12 @@ class ConcurrentTransferTests(TransactionTestCase):
             account_type=Account.AccountType.LIABILITY,
             currency="INR",
         )
+        self.charlie = Account.objects.create(
+            account_number="CONC-TEST-CHARLIE",
+            name="Concurrency Test Charlie",
+            account_type=Account.AccountType.LIABILITY,
+            currency="INR",
+        )
 
         post_transaction(
             transaction_type=LedgerTransaction.TransactionType.OPENING,
@@ -515,3 +556,63 @@ class ConcurrentTransferTests(TransactionTestCase):
 
         self.assertEqual(calculate_account_balance(self.alice), 97500)
         self.assertEqual(calculate_account_balance(self.bob), 2500)
+
+    
+    
+    def test_concurrent_transfers_cannot_overspend_source_account(self):
+        barrier = Barrier(2)
+        source_id = self.alice.id
+        destination_ids = [self.bob.id, self.charlie.id]
+
+        def submit_transfer(destination_id, key):
+            close_old_connections()
+            try:
+                barrier.wait(timeout=10)
+                return create_transfer(
+                    source_account_id=source_id,
+                    destination_account_id=destination_id,
+                    amount_minor_units=60000,
+                    idempotency_key=key,
+                )
+            finally:
+                close_old_connections()
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            futures = [
+                executor.submit(
+                    submit_transfer,
+                    destination_ids[0],
+                    "concurrent-overspend-001",
+                ),
+                executor.submit(
+                    submit_transfer,
+                    destination_ids[1],
+                    "concurrent-overspend-002",
+                ),
+            ]
+
+            results = []
+            for future in futures:
+                try:
+                    results.append(future.result(timeout=30))
+                except ValidationError as exc:
+                    results.append(exc)
+
+        successful = [
+            result for result in results
+            if isinstance(result, Transfer)
+        ]
+        failures = [
+            result for result in results
+            if isinstance(result, ValidationError)
+        ]
+
+        self.assertEqual(len(successful), 1)
+        self.assertEqual(len(failures), 1)
+        self.assertEqual(calculate_account_balance(self.alice), 40000)
+        self.assertEqual(
+            LedgerTransaction.objects.filter(
+                transaction_type=LedgerTransaction.TransactionType.TRANSFER
+            ).count(),
+            1,
+        )

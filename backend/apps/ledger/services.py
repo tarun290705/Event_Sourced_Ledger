@@ -1,6 +1,6 @@
 
 from django.db import transaction
-from django.db.models import Sum
+from django.db.models import Sum, Q
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 from apps.accounts.models import Account
@@ -34,6 +34,38 @@ def calculate_account_balance(account):
         Account.AccountType.ASSET,
         Account.AccountType.EXPENSE,
     ):
+        return debit_total - credit_total
+
+    return credit_total - debit_total
+
+def calculate_historical_balance(account, as_of):
+    if not isinstance(account, Account):
+        account = Account.objects.get(pk=account)
+
+    if as_of is None:
+        raise ValidationError("A historical timestamp is required")
+
+    entries = LedgerEntry.objects.filter(
+        account=account,
+        transaction__status=LedgerTransaction.Status.POSTED,
+        transaction__posted_at__lte=as_of,
+    )
+
+    totals = entries.aggregate(
+        debit_total=Sum(
+            "amount_minor_units",
+            filter=Q(side=LedgerEntry.EntrySide.DEBIT),
+        ),
+        credit_total=Sum(
+            "amount_minor_units",
+            filter=Q(side=LedgerEntry.EntrySide.CREDIT),
+        )
+    )
+
+    debit_total = totals["debit_total"] or 0
+    credit_total = totals["credit_total"] or 0
+
+    if account.account_type in (Account.AccountType.ASSET or Account.AccountType.EXPENSE):
         return debit_total - credit_total
 
     return credit_total - debit_total
