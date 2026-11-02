@@ -9,7 +9,7 @@ from apps.audit.services import record_audit_log
 from .models import Transfer
 
 @transaction.atomic
-def create_transfer(*, source_account_id, destination_account_id, amount_minor_units, idempotency_key, description="Account transfer"):
+def create_transfer(*, source_account_id, destination_account_id, amount_minor_units, idempotency_key, description="Account transfer", actor="system"):
     if not isinstance(idempotency_key, str) or not idempotency_key.strip():
         raise ValidationError("Idempotency key is required")
 
@@ -37,6 +37,7 @@ def create_transfer(*, source_account_id, destination_account_id, amount_minor_u
         ):
             raise ValidationError("Idempotency key was already used for a different transfer")
 
+        existing.idempotent_replay = True
         return existing
 
     account_ids = sorted([source_account_id, destination_account_id], key=str)
@@ -112,7 +113,7 @@ def create_transfer(*, source_account_id, destination_account_id, amount_minor_u
             action=AuditLog.Action.TRANSFER_COMPLETED,
             resource_type="TRANSFER",
             resource_id=transfer.id,
-            actor="system",
+            actor=actor,
             description="Transfer completed successfully",
             metadata={
                 "source_account_id": str(transfer.source_account_id),

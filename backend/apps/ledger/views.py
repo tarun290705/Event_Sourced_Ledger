@@ -1,24 +1,34 @@
+from django.utils.dateparse import parse_datetime
 from rest_framework import generics
-from rest_framework.exceptions import NotFound
-from .models import LedgerTransaction
-from .serializers import LedgerTransactionSerializer
+from rest_framework.exceptions import NotFound, ValidationError
+from .models import LedgerTransaction, LedgerEntry
+from .serializers import LedgerTransactionSerializer, AccountEntrySerializer
+from .filters import LedgerTransactionFilter
 from django.utils.dateparse import parse_datetime
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework.exceptions import ValidationError
 from apps.accounts.models import Account
 from .services import calculate_historical_balance
 
+def visible_transaction(user):
+    queryset = LedgerTransaction.objects.filter(
+        status=LedgerTransaction.Status.POSTED
+    ).prefetch_related("entries__account")
+
+    if not user.is_staff:
+        queryset = queryset.filter(entries__account__owner=user).distinct()
+
+    return queryset
+
 class LedgerTransactionListView(generics.ListAPIView):
     serializer_class = LedgerTransactionSerializer
+    filetrset_class = LedgerTransactionFilter
+    search_fields = ["description"]
+    ordering_fields = ["posted_at", "created_at"]
+    ordering = ["-posted_at", "-id"]
 
     def get_queryset(self):
-        return (
-            LedgerTransaction.objects
-            .filter(status=LedgerTransaction.Status.POSTED)
-            .prefetch_related("ledgerentry_set__acount")
-            .order_by("-posted_at")
-        )
+        return visible_transaction(self.request.user)
 
 class LedgerTransactionDetailView(generics.RetrieveAPIView):
     serializer_class = LedgerTransactionSerializer
@@ -26,11 +36,22 @@ class LedgerTransactionDetailView(generics.RetrieveAPIView):
     lookup_url_kwarg = "transaction_id"
 
     def get_queryset(self):
-        return (
-            LedgerTransaction.objects
-            .filter(status=LedgerTransaction.Status.POSTED)
-            .prefetch_related("ledgerentry_set__acount")
-        )
+        return visible_transaction(self.request.user)
+
+class AccountEntriesView(generics.ListAPIView):
+    serializer_class = AccountEntrySerializer
+    filterset_fields = ["side"]
+    ordering_fields = ["amount_minor_units", "created_at"]
+    ordering = ["-transaction__posted_at", "-created_at", "-id"]
+
+    def get_queryset(self):
+        user = self.request.user
+        account = Account.objects.filter(pk=self.kwargs["account_id"]).first()
+
+        if account is None or (not user.is_staff and account.owner_id != user.id):
+            raise NotFound("Account not found")
+
+        return LedgerEntry.objects.filter(account=account, transaction__status=LedgerTransaction.Status.POSTED).select_related("transaction")
 
 class HistoricalAccountBalanceView(APIView):
     def get(self, request, account_id):

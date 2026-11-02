@@ -56,10 +56,9 @@ def replay_transfer_projection():
 
 def verify_transfer_projection():
     projection = replay_transfer_projection()
-    transfers = Transfer.objects.all()
 
     database_transfers = {
-        str(transfer.id): transfer for transfer in transfers
+        str(transfer.id): transfer for transfer in Transfer.objects.all()
     }
 
     replayed_ids = set(projection)
@@ -78,34 +77,32 @@ def verify_transfer_projection():
         "status",
     ]
 
+    uuid_fields = {"source_account_id", "destination_account_id", "ledger_transaction_id"}
+
     for transfer_id in sorted(replayed_ids & database_ids):
         replayed = projection[transfer_id]
         stored = database_transfers[transfer_id]
 
         for field in comparable_fields:
-            expected = stored.status if field == "status" else getattr(stored, field)
+            stored_value = getattr(stored, field)
 
-            if field in {
-                "source_account_id",
-                "destination_account_id",
-                "ledger_transaction_id",
-            }:
-                expected = str(expected)
+            if field in uuid_fields:
+                stored_value = str(stored_value)
 
-            if replayed[field] != expected:
+            if replayed[field] != stored_value:
                 mismatches.append({
                     "transfer_id": transfer_id,
                     "field": field,
                     "replayed_value": replayed[field],
-                    "database_value": expected,
+                    "database_value": stored_value,
                 })
 
-        return {
-            "is_consistent": not (missing_events or missing_transfers or mismatches),
-            "missing_events": missing_events,
-            "missing_transfers": missing_transfers,
-            "mismatches": mismatches,
-        }
+    return {
+        "is_consistent": not (missing_events or missing_transfers or mismatches),
+        "missing_events": missing_events,
+        "missing_transfers": missing_transfers,
+        "mismatches": mismatches,
+    }
 
 def replay_account_balances():
     events = DomainEvent.objects.filter(
@@ -181,7 +178,7 @@ def verify_account_balance_projection():
     mismatches = []
 
     for account_id in sorted(all_account_ids):
-        replayed_balance = replayed_balances.get(account_id)
+        replayed_balance = replayed_balances.get(account_id, 0)
         live_balance = live_balances.get(account_id)
 
         if replayed_balance != live_balance:

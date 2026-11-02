@@ -1,6 +1,7 @@
 from django.urls import path
-from .views import TransferCreateView
+from .views import TransferDetailView, TransferListCreateView
 
 urlpatterns = [
-    path("", TransferCreateView.as_view(), name="transfer-create"),
+    path("", TransferListCreateView.as_view(), name="transfer-list-create"),
+    path("<uuid:pk>/", TransferDetailView.as_view(), name="transfer-detail"),
 ]

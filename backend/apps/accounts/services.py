@@ -10,6 +10,7 @@ def create_account(*, account_number, name, account_type, currency="INR", owner=
         account_number=account_number,
         name=name,
         account_type=account_type,
+        currency=currency,
         owner=owner,
     )
     account.full_clean()
@@ -19,7 +20,7 @@ def create_account(*, account_number, name, account_type, currency="INR", owner=
         action=AuditLog.Action.ACCOUNT_CREATED,
         resource_type="ACCOUNT",
         resource_id=account.id,
-        actor=account,
+        actor=actor,
         description="Account created successfully",
         metadata={
             "account_number": account.account_number,
@@ -82,3 +83,5 @@ def change_account_status(*, account_id, new_status, actor="system"):
             "new_status": new_status,
         },
     )
+
+    return account

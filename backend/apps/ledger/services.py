@@ -65,7 +65,7 @@ def calculate_historical_balance(account, as_of):
     debit_total = totals["debit_total"] or 0
     credit_total = totals["credit_total"] or 0
 
-    if account.account_type in (Account.AccountType.ASSET or Account.AccountType.EXPENSE):
+    if account.account_type in (Account.AccountType.ASSET, Account.AccountType.EXPENSE):
         return debit_total - credit_total
 
     return credit_total - debit_total
