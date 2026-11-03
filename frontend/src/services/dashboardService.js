@@ -1,0 +1,6 @@
+import apiClient from './apiClient'
+
+export async function getDashboardSummary() {
+  const { data } = await apiClient.get('/dashboard/summary/')
+  return data
+}

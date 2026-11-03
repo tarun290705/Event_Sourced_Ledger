@@ -12,6 +12,7 @@ class LedgerEntrySerializer(serializers.ModelSerializer):
             "account",
             "account_number",
             "account_name",
+            "account_currency",
             "side",
             "amount_minor_units",
             "created_at",
