@@ -5,6 +5,11 @@ export async function listTransactions(params = {}) {
   return data
 }
 
+export async function getTransaction(transactionId) {
+  const { data } = await apiClient.get(`/ledger/transactions/${transactionId}/`)
+  return data
+}
+
 export async function listAccountEntries(accountId, params = {}) {
   const { data } = await apiClient.get(`/ledger/accounts/${accountId}/entries/`, { params })
   return data

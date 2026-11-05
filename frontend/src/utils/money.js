@@ -66,3 +66,35 @@ export function formatMinorUnits(minorUnits, currency) {
 
   return `${negative ? '-' : ''}${symbol}${gap}${grouped}${fraction ? `.${fraction}` : ''}`
 }
+
+export function parseToMinorUnits(input, currency) {
+  const digits = getFractionDigits(currency)
+  const text = String(input ?? '').trim()
+
+  if (text === '') return { value: null, error: 'Enter an amount.' }
+
+  const match = /^(\d+)(?:\.(\d*))?$/.exec(text)
+
+  if (!match) {
+    return {
+      value: null,
+      error: 'Enter digits with an optional decimal point, for example 250.00. Commas are not accepted.',
+    }
+  }
+
+  const fraction = match[2] ?? ''
+
+  if (fraction.length > digits) {
+    return {
+      value: null,
+      error: digits === 0 ? 'This currency does not use decimals.' : `Use at most ${digits} decimal places.`,
+    }
+  }
+
+  const minorUnits = BigInt(match[1] + fraction.padEnd(digits, '0'))
+
+  if (minorUnits <= 0n) return { value: null, error: 'The amount must be greater than zero.' }
+  if (minorUnits > BigInt(Number.MAX_SAFE_INTEGER)) return { value: null, error: 'The amount is too large.' }
+
+  return { value: Number(minorUnits), error: null }
+}

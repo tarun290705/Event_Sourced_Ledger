@@ -1,9 +1,11 @@
 from rest_framework import serializers
 from .models import LedgerEntry, LedgerTransaction
 
+
 class LedgerEntrySerializer(serializers.ModelSerializer):
     account_number = serializers.CharField(source="account.account_number", read_only=True)
     account_name = serializers.CharField(source="account.name", read_only=True)
+    account_currency = serializers.CharField(source="account.currency", read_only=True)
 
     class Meta:
         model = LedgerEntry
@@ -18,6 +20,7 @@ class LedgerEntrySerializer(serializers.ModelSerializer):
             "created_at",
         ]
         read_only_fields = fields
+
 
 class LedgerTransactionSerializer(serializers.ModelSerializer):
     entries = LedgerEntrySerializer(many=True, read_only=True)
@@ -35,7 +38,9 @@ class LedgerTransactionSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = fields
 
+
 class AccountEntrySerializer(serializers.ModelSerializer):
+    """One account's entry, flattened with its parent transaction's details."""
     transaction_id = serializers.UUIDField(read_only=True)
     transaction_type = serializers.CharField(source="transaction.transaction_type", read_only=True)
     description = serializers.CharField(source="transaction.description", read_only=True)

@@ -5,10 +5,15 @@ import AuthLayout from '../layouts/AuthLayout'
 import AppLayout from '../layouts/AppLayout'
 import LoginPage from '../pages/LoginPage'
 import DashboardPage from '../pages/DashboardPage'
+import NotFoundPage from '../pages/NotFoundPage'
 import AccountsPage from '../pages/accounts/AccountsPage'
 import AccountDetailPage from '../pages/accounts/AccountDetailPage'
-import NotFoundPage from '../pages/NotFoundPage'
-import PlaceholderPage from '../pages/PlaceholderPage'
+import TransfersPage from '../pages/transfers/TransfersPage'
+import TransactionsPage from '../pages/ledger/TransactionsPage'
+import TransactionDetailPage from '../pages/ledger/TransactionDetailPage'
+import EventLogPage from '../pages/events/EventLogPage'
+import AuditLogsPage from '../pages/audit/AuditLogsPage'
+import IntegrityPage from '../pages/integrity/IntegrityPage'
 import { ROUTES } from '../utils/constants'
 
 export default function AppRoutes() {
@@ -23,14 +28,14 @@ export default function AppRoutes() {
           <Route index element={<DashboardPage />} />
           <Route path={ROUTES.ACCOUNTS} element={<AccountsPage />} />
           <Route path={ROUTES.ACCOUNT_DETAIL} element={<AccountDetailPage />} />
-          <Route path={ROUTES.TRANSFERS} element={<PlaceholderPage title="Transfers" />} />
-          <Route path={ROUTES.TRANSACTIONS} element={<PlaceholderPage title="Ledger transactions" />} />
-          <Route path={ROUTES.TRANSACTION_DETAIL} element={<PlaceholderPage title="Transaction details" />} />
+          <Route path={ROUTES.TRANSFERS} element={<TransfersPage />} />
+          <Route path={ROUTES.TRANSACTIONS} element={<TransactionsPage />} />
+          <Route path={ROUTES.TRANSACTION_DETAIL} element={<TransactionDetailPage />} />
 
           <Route element={<StaffRoute />}>
-            <Route path={ROUTES.EVENTS} element={<PlaceholderPage title="Event log" />} />
-            <Route path={ROUTES.AUDIT_LOGS} element={<PlaceholderPage title="Audit logs" />} />
-            <Route path={ROUTES.INTEGRITY} element={<PlaceholderPage title="System integrity" />} />
+            <Route path={ROUTES.EVENTS} element={<EventLogPage />} />
+            <Route path={ROUTES.AUDIT_LOGS} element={<AuditLogsPage />} />
+            <Route path={ROUTES.INTEGRITY} element={<IntegrityPage />} />
           </Route>
 
           <Route path="*" element={<NotFoundPage />} />
